@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "policy": "fail_on_unrecognized_warning_and_missing_expected_warning",
+  "warnings": [
+    {
+      "id": "oversized-function-8241A370",
+      "pattern": "^Function 0x8241A370 is [0-9]+ bytes, exceeds max_file_size_bytes \\([0-9]+\\)$",
+      "reason": "Known deterministic large translation unit in Forza engine."
+    }
+  ]
+}

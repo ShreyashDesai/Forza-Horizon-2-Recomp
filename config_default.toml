@@ -1,0 +1,394 @@
+# Forza Horizon 2 - Verified Function Boundaries
+#
+# 2026-09-01: audited every entry against Ghidra disassembly + the current
+# generated code. 8 entries from the old manual scan were WRONG -- they
+# pinned "size = 0x08" on functions that are actually longer, silently
+# truncating them (losing the final blr/b and, in several cases, real
+# instructions in between). Confirmed broken and removed:
+#   83243750, 83243770  (16-byte assert-stub thunks cut to 8 bytes -- this
+#                         truncation is what left 0x83243780 undiscovered
+#                         and caused the "invalid function" crash there)
+#   8323AD68             (atomic lock-increment primitive, widely used --
+#                         cut before the lwarx/stwcx retry loop and blr)
+#   8319D238, 82C56778   (cut mid-function, well before their real end)
+#   82C9F010, 82C9EFD8   (12/16-byte functions cut to 8, losing the blr)
+#   82CBFCD0             (20-byte store helper cut to 8, losing the stores+blr)
+#
+# The remaining 12 entries were verified correct: each is an exact 8-byte
+# function/chunk (li+blr, or a 2-instruction tail-call ending in b) where
+# size=0x08 matches the real instruction count, so they are kept.
+
+[functions."830453EC"]
+size = 0x08
+
+[functions."8305E804"]
+size = 0x08
+
+[functions."82E83A70"]
+size = 0x08
+
+[functions."8305E91C"]
+size = 0x08
+
+[functions."82C53234"]
+size = 0x08
+
+# Third pass, 2026-09-01: 3 of the original 8 broken entries were wrongly
+# left out earlier because removing them produced no static Validate error
+# -- but Validate only checks unresolved DIRECT "b" branches; a function
+# reached only via "bl"/"bctr" (indirect/dynamic dispatch) is never checked
+# statically, it only fails live when that code path actually runs. Found
+# live: 0x8319D238 crashed at runtime the same way as the table thunks.
+# Checking the other two confirmed they had ALSO silently vanished from the
+# generated code (grep for their DEFINE_REX_FUNC came back empty).
+[functions."8319D238"]
+size = 0xF8
+
+# Same class of bug, different category: this one IS a genuine vtable slot
+# (xrefs confirmed 3 real vtable entries pointing at it: 0x8229E5F4/E71C/E8C4)
+# rather than the CRT thunk table. The VTableScanner apparently didn't carry
+# this particular vtable's target function into the function-discovery set.
+# Found live after fixing 8319D238: same crash class, next indirect call.
+[functions."83198118"]
+size = 0x58
+
+# Same vtable-miss class again (single xref from data at 0x82264688), a
+# simple 8-byte "set arg, tail-call" trampoline like the ones already
+# confirmed correct in the CRT-table section above.
+[functions."830387E0"]
+size = 0x08
+
+# Third instance of the same vtable-miss virtual method family as
+# 0x8319D238/0x83198118 (same field-count body shape, offsets 0x4c/0x58/
+# 0xa8/0xac/0x34), single xref from vtable data at 0x8229EA2C. End found by
+# walking to the next genuine function prologue at 0x8319E578.
+[functions."8319E478"]
+size = 0x100
+
+# Bulk fix, 2026-09-01: dumped the vtable data region around 0x8229D000-
+# 0x822A1000 (16KB, source of the xrefs for 8319D238/83198118/8319E478/
+# 830387E0/8319EB58 above) and cross-referenced every candidate pointer
+# against declared functions. Most hits in that dump were false positives
+# (ordinary data misread as an address), but every hit inside the
+# 0x8319xxxx range checked out as real: 12 more 8-byte "this-adjustor"
+# thunks (subi r3,r3,4; b <target>) clustered right before/after the
+# already-fixed implementations -- the standard C++ multiple-inheritance
+# thunk pattern, same class of vtable-only-reachable gap as everything else
+# in this section. Confirmed each via Ghidra disassembly before adding.
+[functions."83198108"]
+size = 0x08
+[functions."83198110"]
+size = 0x08
+[functions."83198170"]
+size = 0x08
+[functions."8319D218"]
+size = 0x08
+[functions."8319D228"]
+size = 0x08
+[functions."8319D230"]
+size = 0x08
+[functions."8319E448"]
+size = 0x08
+[functions."8319E450"]
+size = 0x08
+[functions."8319E458"]
+size = 0x08
+[functions."8319E460"]
+size = 0x08
+[functions."8319E468"]
+size = 0x08
+[functions."8319E470"]
+size = 0x08
+[functions."8319EB58"]
+size = 0x18
+
+# Different discovery gap category: this one has ZERO xrefs (not vtable,
+# not the CRT table) -- it's a game-side callback the title registers with
+# XAM's voice subsystem and only reaches it dynamically via its own
+# XexGetProcedureAddress lookup at runtime (confirmed by the log line
+# immediately preceding the crash: "[Module: xam.xex
+# (VoiceSetMicArrayIdleUsers)] ... ProcAddr 0x8245F9E8"). Body is a single
+# real `blr` (no-op, makes sense with no mic array hardware on PC).
+[functions."8245F9E8"]
+size = 0x04
+
+# Another vtable-only this-adjustor thunk (single xref from 0x822C1974),
+# same 8-byte pattern as the 0x8319xxxx cluster, different class.
+[functions."831E77E0"]
+size = 0x08
+
+# Same vtable-only thunk pattern (single xref from 0x820CF144).
+[functions."82B3A508"]
+size = 0x08
+
+# One more from the same 0x8319xxxx cluster/vtable data region scanned
+# earlier (xref 0x8229E5D4) -- missed by that scan's snapshot, caught live.
+[functions."831980F8"]
+size = 0x08
+[functions."831980D8"]
+size = 0x08
+[functions."831980E0"]
+size = 0x08
+[functions."831980E8"]
+size = 0x08
+[functions."831980F0"]
+size = 0x08
+
+# Real computed function (not a thunk) found via the same rescan, xref from
+# 0x8229EC18. End found by walking to the next genuine prologue at
+# 0x831A2D30.
+[functions."831A2CF8"]
+size = 0x38
+
+# Same "zero xrefs, only reachable via the game's own XexGetProcedureAddress
+# lookup" category as 0x8245F9E8 (right next to it) -- this one forwards
+# through a vtable slot instead of being a no-op. End found at the next
+# genuine prologue, 0x824F94B0.
+[functions."824F9498"]
+size = 0x18
+
+# Same category again, same caller lr=0x8245F9BC dispatching through
+# multiple different vtable-forwarder callbacks one at a time.
+[functions."825F5B78"]
+size = 0x18
+
+# Same listener-callback pattern. Confirmed via decompiling the caller
+# (Function_8245F7F0 at 0x8245F7F0): this is a "notify all listeners" loop
+# walking a runtime-built linked list, calling the function pointer stored
+# in each node's first field. Since the list is populated at runtime, its
+# callback targets aren't statically enumerable from one data table like
+# the CRT table was -- confirmed each is loaded as an immediate constant at
+# its own distinct registration call site (this one at 0x825FC57C).
+[functions."82489A30"]
+size = 0x10
+
+# 3 sibling forwarders in the same gap (0x82489A40-0x82489A87, between two
+# already-declared functions) -- same listener-interface family, each
+# dispatching through a different vtable slot (0xd8/0x14/0xfc). Crash target
+# was 0x82489A58; found the other two by disassembling the whole gap.
+[functions."82489A40"]
+size = 0x18
+[functions."82489A58"]
+size = 0x18
+[functions."82489A70"]
+size = 0x18
+
+# New region (0x8303xxxx), same vtable-only-reachable class of gap (single
+# DATA xref at 0x8226493C). Real small function (cvar-style getter/setter
+# with 2 blr exit paths), ends cleanly at the first blr, 0x34 bytes.
+[functions."8303EE88"]
+size = 0x34
+
+# Same listener-notify pattern (lr=0x8245F9BC again), triggered by the user
+# pressing Enter to advance past the intro.
+[functions."825F3608"]
+size = 0x18
+
+# Two more siblings in the same 0x8245F9xx/0x8245FAxx callback cluster as
+# 0x8245F9E8/0x824F9498, found while tracing the crash at 0x8245FA08 (zero
+# xrefs, same "only reachable via the game's own dynamic lookup" category).
+[functions."8245F9F0"]
+size = 0x18
+[functions."8245FA08"]
+size = 0x18
+
+# MILESTONE: reached the real "PRESS START" screen. This is the long-known
+# sub_831D5F58 -> sub_831D75A0 pair (the title's own PowerPC
+# checkpoint/context-save routine, see forzahorizon2_hooks.cpp comment
+# above sub_831D5F58's old no-op removal) -- the codegen warning about this
+# exact pair was already flagged during the branch-migration regeneration
+# but never actually fixed for the new discovery. Unlike everything else in
+# this section, Ghidra's OWN auto-analysis already has this one fully
+# bounded (confirmed via get_basic_blocks: single block, 196 bytes,
+# 0x831D75A0-0x831D7663), so the size is exact, not estimated.
+[functions."831D75A0"]
+size = 0xC4
+
+# Com save/cache limpos o arranque segue um caminho diferente (evita o
+# crash de vtable nula visto com um save pré-existente) e volta à classe de
+# "listener callback" já conhecida (lr=0x8245F9BC outra vez).
+[functions."824F9C28"]
+size = 0x18
+[functions."824F92A8"]
+size = 0x10
+[functions."824F92B8"]
+size = 0x10
+
+# Atomic increment primitive (same shape as sub_8323AD68 earlier), vtable
+# xref from 0x83421934. Ends cleanly at the next real prologue, 0x83229D60.
+[functions."83229D38"]
+size = 0x28
+
+# Sibling right before the already-fixed 0x825F5B78, same forwarder family.
+[functions."825F5B68"]
+size = 0x10
+
+# Same listener-callback family, ends at the next real prologue 0x825F4078.
+[functions."825F4060"]
+size = 0x18
+[functions."825F41D0"]
+size = 0x10
+
+[functions."8323AD68"]
+size = 0x24
+
+# 0x82C56778 is NOT a standalone function -- its trailing "b 0x82C56734"
+# branches backward into the body of an earlier function, confirmed via
+# Ghidra: the real function starts at 0x82C566C8 (genuine prologue:
+# "mfspr r12,LR; bl 0x82c010a8"), which the scanner already discovers
+# correctly on its own (and already emits the dispatch_address-switch
+# pattern the new parent-backed-alias mechanism uses for reentry points).
+# Marked as a chunk of that parent instead of guessing a flat size.
+[functions."82C56778"]
+parent = 0x82C566C8
+
+# These addresses are unreachable via normal control flow -- each is only
+# referenced as a raw function pointer inside a large data table (a
+# CRT-style array of small "assert with message" stub thunks, confirmed via
+# Ghidra: table entry 0x8330368C -> 0x83243780, table spans roughly
+# 0x83300010-0x8333F88C). The automatic scanner never disassembles through
+# data, so it does not discover these on its own -- confirmed by testing
+# with the entries fully removed: 0x82C9F010/0x82C9EFD8/0x82CBFCD0 came back
+# as hard "Validate: target not in any function" errors, and the
+# 0x83243750/770/780/790/7A0 thunk cluster silently vanished from the
+# generated code entirely (this exact gap is what caused the
+# "Call to invalid or unregistered function at guest address 0x83243780"
+# runtime crash). Kept as boundary markers, but with the CORRECT size this
+# time (measured from Ghidra disassembly: instruction count x 4 bytes),
+# unlike the old 0x08 that truncated them and silently dropped their real
+# body (the addi+b that actually invokes the handler).
+[functions."82C9F010"]
+size = 0x0C
+
+[functions."82C9EFD8"]
+size = 0x10
+
+[functions."82CBFCD0"]
+size = 0x14
+
+[functions."83243750"]
+size = 0x10
+
+[functions."83243770"]
+size = 0x10
+
+[functions."83243780"]
+size = 0x10
+
+[functions."83243790"]
+size = 0x10
+
+[functions."832437A0"]
+size = 0x10
+
+# Same table-only-reachable-thunk problem, next one in the row after 7A0.
+# This variant is wider (sets up two pointers, r11 and r10, before the
+# eventual branch) -- confirmed 32 bytes by the gap to the next already-
+# correctly-discovered thunk at 0x832437D0. Found live: after fixing
+# 0x83243780 above, the game got exactly one thunk further in this same
+# table-walk loop and hit "invalid or unregistered function at guest
+# address 0x832437B0" -- same crash class, next table entry.
+[functions."832437B0"]
+size = 0x20
+
+# 2026-09-01, second pass: instead of fixing these one crash at a time,
+# extracted the FULL CRT-style function-pointer table this loop walks
+# (0x83300010-0x8333F88C, confirmed range from the loop's own lis/addi
+# bounds-setup at guest 0x82BFFA68-0x82BFFA78) by dumping it from Ghidra and
+# cross-referencing every non-null pointer against the generated code's
+# declared sub_ functions. Exactly 24 were missing, in 4 clusters of 6 --
+# all the same 16-byte assert-stub thunk confirmed via Ghidra disassembly
+# (identical shape to 0x83243780 above). Adding all 24 up front instead of
+# waiting for each to crash the game in turn.
+[functions."83250C50"]
+size = 0x10
+
+[functions."83250C70"]
+size = 0x10
+
+[functions."83250C80"]
+size = 0x10
+
+[functions."83250C90"]
+size = 0x10
+
+[functions."83250CA0"]
+size = 0x10
+
+[functions."83250CB0"]
+size = 0x10
+
+[functions."832519A0"]
+size = 0x10
+
+[functions."832519B0"]
+size = 0x10
+
+[functions."832519C0"]
+size = 0x10
+
+[functions."832519D0"]
+size = 0x10
+
+[functions."832519E0"]
+size = 0x10
+
+[functions."83251980"]
+size = 0x10
+
+[functions."8325F900"]
+size = 0x10
+
+[functions."8325F920"]
+size = 0x10
+
+[functions."8325F930"]
+size = 0x10
+
+[functions."8325F940"]
+size = 0x10
+
+[functions."8325F950"]
+size = 0x10
+
+[functions."8325F960"]
+size = 0x10
+
+[functions."8326F7C0"]
+size = 0x10
+
+[functions."8326F7E0"]
+size = 0x10
+
+[functions."8326F7F0"]
+size = 0x10
+
+[functions."8326F800"]
+size = 0x10
+
+[functions."8326F810"]
+size = 0x10
+
+[functions."8326F820"]
+size = 0x10
+
+[functions."82C9EFF0"]
+size = 0x08
+
+[functions."82C9EFF8"]
+size = 0x08
+
+[functions."82C9F008"]
+size = 0x08
+
+[functions."82C9F000"]
+size = 0x08
+
+[functions."82CBFCB8"]
+size = 0x08
+
+[functions."82CBFCC0"]
+size = 0x08
+
+[functions."82CBFCC8"]
+size = 0x08

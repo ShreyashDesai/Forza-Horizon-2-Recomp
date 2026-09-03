@@ -1,0 +1,6 @@
+# XMediaFacade_default.xex configuration
+[functions."88055B80"]
+size = 0x10
+
+[functions."882435D8"]
+size = 0x10

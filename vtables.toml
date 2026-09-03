@@ -1,0 +1,11 @@
+# vtables.toml -- regenerated 2026-09-01.
+#
+# The previous version of this file was produced by a manual scan script
+# (gen_clean_vtables.py) that inferred vtable entries and thunk sizes from
+# raw pointer-pair heuristics over the decrypted binary. That approach is
+# what produced the unstable output partitioning this rebuild is meant to
+# fix. The SDK's own VTableScanner (src/codegen/vtable_scanner.cpp) now
+# discovers vtables automatically from Complete Object Locators (MSVC/PPC
+# RTTI), so this file starts empty -- entries are added here only for
+# cases the automatic scanner cannot resolve on its own, confirmed by
+# testing, not carried over from the old manual list.
